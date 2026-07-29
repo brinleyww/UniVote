@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { db } from '../firebase';
-import { doc, getDoc, setDoc, deleteDoc, runTransaction } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc, runTransaction, collection, getDocs, updateDoc, increment } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
-import { Loader2, ArrowLeft, Shield, CheckCircle2, Share2, Lock, Bookmark, BookmarkCheck, Edit3 } from 'lucide-react';
+import { Loader2, ArrowLeft, Shield, CheckCircle2, Share2, Lock, Bookmark, BookmarkCheck, Edit3, Users } from 'lucide-react';
 import { formatDistanceToNow, isPast, format } from 'date-fns';
 
 export default function PollView() {
@@ -15,6 +15,7 @@ export default function PollView() {
   const [hasVoted, setHasVoted] = useState(false);
   const [currentVoteId, setCurrentVoteId] = useState(null);
   const [isFollowing, setIsFollowing] = useState(false);
+  const [followerCount, setFollowerCount] = useState(0);
   
   const [loading, setLoading] = useState(true);
   const [votingId, setVotingId] = useState(null);
@@ -33,6 +34,12 @@ export default function PollView() {
         }
 
         setPoll({ id: pollSnap.id, ...pollSnap.data() });
+
+        // Count followers for this poll by checking all users' following subcollections
+        // We store a counter approach: count votes docs that reference this poll as a proxy,
+        // or we can use a dedicated followers count. For now, we'll track via the poll doc.
+        // Simple approach: store followerCount on the poll document itself.
+        setFollowerCount(pollSnap.data().followerCount || 0);
 
         if (currentUser) {
           // Check if voted
@@ -151,13 +158,18 @@ export default function PollView() {
     if (!currentUser) return navigate('/login');
     
     const followRef = doc(db, 'users', currentUser.uid, 'following', id);
+    const pollRef = doc(db, 'polls', id);
     try {
       if (isFollowing) {
         await deleteDoc(followRef);
+        await updateDoc(pollRef, { followerCount: increment(-1) });
         setIsFollowing(false);
+        setFollowerCount(prev => Math.max(0, prev - 1));
       } else {
         await setDoc(followRef, { pollId: id, followedAt: new Date() });
+        await updateDoc(pollRef, { followerCount: increment(1) });
         setIsFollowing(true);
+        setFollowerCount(prev => prev + 1);
       }
     } catch (err) {
       console.error("Error toggling follow:", err);
@@ -278,7 +290,7 @@ export default function PollView() {
           <p className="text-lg text-slate-700 mb-6">{poll.question}</p>
           
           {poll.tags && poll.tags.length > 0 && (
-            <div className="flex flex-wrap gap-2 mb-8">
+            <div className="flex flex-wrap gap-2 mb-6">
               {poll.tags.map(tag => (
                 <span key={tag} className="bg-slate-100 text-slate-600 px-3 py-1 rounded-md font-medium text-sm">
                   #{tag}
@@ -286,6 +298,23 @@ export default function PollView() {
               ))}
             </div>
           )}
+
+          {/* Info badges: vote changing, follower count */}
+          <div className="flex flex-wrap items-center gap-3 mb-6">
+            {poll.allowVoteChange && !isClosed && (
+              <span className="inline-flex items-center gap-1.5 text-sm font-medium text-orange-600 bg-orange-50 border border-orange-100 px-3 py-1.5 rounded-lg">
+                <Edit3 size={14} /> Vote changing allowed
+              </span>
+            )}
+            {!poll.allowVoteChange && !isClosed && (
+              <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-lg">
+                <Lock size={14} /> Votes are final
+              </span>
+            )}
+            <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-lg">
+              <Users size={14} /> {followerCount} {followerCount === 1 ? 'follower' : 'followers'}
+            </span>
+          </div>
 
           {isClosed && !hasVoted && (
             <div className="mb-6 p-4 bg-slate-50 border border-slate-200 rounded-xl text-center text-slate-600 font-medium flex justify-center items-center gap-2">
@@ -357,7 +386,7 @@ export default function PollView() {
             {hasVoted && poll.allowVoteChange && !isClosed && (
               <div className="flex items-center gap-1.5 text-sm font-medium text-orange-500 bg-orange-50 px-3 py-1.5 rounded-lg">
                 <Edit3 size={16} />
-                You can change your vote
+                Click another option to change your vote
               </div>
             )}
           </div>
