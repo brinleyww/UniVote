@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { db, storage } from '../firebase';
+import { db } from '../firebase';
 import { collection, addDoc, doc, getDoc, updateDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useNavigate } from 'react-router-dom';
 import { Plus, X, Image as ImageIcon, Shield, EyeOff, Loader2, Edit3, Tag, Clock, Settings, Upload, Shuffle, Share2, Eye } from 'lucide-react';
 
@@ -13,8 +12,7 @@ export default function CreatePoll() {
   const [title, setTitle] = useState('');
   const [question, setQuestion] = useState('');
   const [options, setOptions] = useState([{ id: 1, text: '' }, { id: 2, text: '' }]);
-  const [imageFile, setImageFile] = useState(null);
-  const [imagePreview, setImagePreview] = useState(null);
+  const [thumbnail, setThumbnail] = useState('');
   
   // Settings
   const [isAnonymous, setIsAnonymous] = useState(false);
@@ -107,21 +105,6 @@ export default function CreatePoll() {
     setTags(tags.filter(t => t !== tagToRemove));
   };
 
-  const handleImageChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        return setError("Image must be under 5MB");
-      }
-      setImageFile(file);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImagePreview(reader.result);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
   async function handleSubmit(e) {
     e.preventDefault();
     if (cooldownEndsAt) return;
@@ -136,13 +119,6 @@ export default function CreatePoll() {
 
     try {
       const userRef = doc(db, 'users', currentUser.uid);
-      
-      let thumbnailUrl = null;
-      if (imageFile) {
-        const imageRef = ref(storage, `polls/${Date.now()}_${imageFile.name}`);
-        await uploadBytes(imageRef, imageFile);
-        thumbnailUrl = await getDownloadURL(imageRef);
-      }
 
       const formattedOptions = validOptions.map(opt => ({
         id: opt.id.toString(),
@@ -156,7 +132,7 @@ export default function CreatePoll() {
         title: title.trim(),
         question: question.trim(),
         options: formattedOptions,
-        thumbnail: thumbnailUrl,
+        thumbnail: thumbnail.trim() || null,
         isAnonymous,
         isPrivate,
         allowVoteChange,
@@ -332,32 +308,16 @@ export default function CreatePoll() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
             <label className="block text-sm font-semibold text-slate-700 mb-1 flex items-center gap-2">
-              <ImageIcon size={16} /> Upload Image (Optional)
+              <ImageIcon size={16} /> Thumbnail URL (Optional)
             </label>
-            <div className="relative w-full h-10">
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleImageChange}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-              />
-              <div className="absolute inset-0 w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-lg flex items-center gap-2 text-slate-500 text-sm overflow-hidden">
-                <Upload size={16} />
-                <span className="truncate">{imageFile ? imageFile.name : 'Choose an image file...'}</span>
-              </div>
-            </div>
-            {imagePreview && (
-              <div className="mt-2 relative w-24 h-24 rounded-lg overflow-hidden border border-slate-200">
-                <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
-                <button
-                  type="button"
-                  onClick={() => { setImageFile(null); setImagePreview(null); }}
-                  className="absolute top-1 right-1 bg-black/50 text-white rounded-full p-1 hover:bg-black/70"
-                >
-                  <X size={12} />
-                </button>
-              </div>
-            )}
+            <input
+              type="url"
+              value={thumbnail}
+              autoComplete="off"
+              onChange={(e) => setThumbnail(e.target.value)}
+              className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+              placeholder="https://example.com/image.jpg"
+            />
           </div>
           
           <div>
